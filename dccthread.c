@@ -83,7 +83,8 @@ void dccthread_yield(void) {
 }
 
 void schedule() {
-	execute(pop_ready_queue());
+	while(ready_siz != 0)
+		execute(pop_ready_queue());
 }
 
 void dccthread_init(void (*func)(int), int param) {
@@ -106,6 +107,5 @@ void dccthread_init(void (*func)(int), int param) {
 	
 	// Execute main thread
 	execute(pop_ready_queue());
-	while(1)
-		schedule();//?????????????????????????
+	exit(0);
 }

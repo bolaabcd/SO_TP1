@@ -13,27 +13,19 @@
 struct dccthread {
 	const char* name;
 	ucontext_t context;
-	int non_empty;
-	int executing;
+	char stack[MAX_BYTES_PER_STACK];
 };
 
-// The first thread of the list will be the scheduler.
-// Notice that threads[i].non_empty and threads[i].executing will be initialized to 0, as this is global initialization.
-dccthread_t threads[MAX_THREADS];
+dccthread_t scheduler;
+dccthread_t* executing;
 
-// The stacks
-char stacks[MAX_THREADS][MAX_BYTES_PER_STACK];
-
-// IS THIS OK????
-// IDs of the ready threads (circular queue)
-int ready_list[MAX_THREADS], first_ready, last_ready, ready_siz;
+// Circular queue for the list of ready threads. last_ready-1 is the last value. first = last if empty.
+dccthread_t* ready_list[MAX_THREADS];
+int first_ready, last_ready, ready_siz;
 
 // Return which thread is executing
 dccthread_t* dccthread_self(void) {
-	for(int i = 0; i < MAX_THREADS; i++)
-		if(threads[i].executing)
-			return &threads[i];
-	return NULL; // no thread executing
+	return executing;
 }	
 
 // Return name of the current thread
@@ -41,67 +33,79 @@ const char* dccthread_name(dccthread_t *tid) {
 	return dccthread_self()->name;
 }
 
+void add_ready_queue(dccthread_t* thread) {
+	ready_list[last_ready] = thread;
+	last_ready = (last_ready+1)%MAX_THREADS;
+	if(last_ready == first_ready)
+		exit(1);//??????????????????????????
+	ready_siz++;
+}
+
+dccthread_t* pop_ready_queue(void) {
+	if(last_ready == first_ready)
+		exit(1);//???????????????????????
+	dccthread_t *ans = ready_list[first_ready];
+	first_ready = (first_ready+1)%MAX_THREADS;
+	ready_siz--;
+	return ans;
+}
+
 // Start new thread and add to ready list
 dccthread_t* dccthread_create(const char *name, void (*func)(int), int param) {
-	// Finding empy place to put thread
-	int i;
-	for(i = 1; i < MAX_THREADS; i++)
-		if(!threads[i].non_empty)
-			break;
-	if(i == MAX_THREADS)
-		return NULL;// No more threads allowed
-	dccthread_t *new_thread = &threads[i];
+	dccthread_t *new_thread = malloc(sizeof (dccthread_t));
 
 	// Creating thread
 	new_thread->name = name;
 	getcontext(&new_thread->context);
-	new_thread->context.uc_link = &threads[0].context;//????????????????????????
-	new_thread->context.uc_stack.ss_sp = stacks[i];
-	new_thread->context.uc_stack.ss_size = sizeof stacks[i];
-	new_thread->non_empty = 1;
+	new_thread->context.uc_link = &scheduler.context;//???????????????????????
+	new_thread->context.uc_stack.ss_sp = new_thread->stack;
+	new_thread->context.uc_stack.ss_size = sizeof new_thread->stack;
 	makecontext(&new_thread->context,(void *)func,1,param);
-
-	// Adding to ready queue
-	//if((last_ready+1)%MAX_THREADS == first_ready)
-	//	return NULL; // No more threads can be ready (REDUNDANT)
-	last_ready = (last_ready+1)%MAX_THREADS;
-	ready_list[last_ready] = i;
-	ready_siz++;
+	
+	add_ready_queue(new_thread);
 
 	// Return without executing the new thread
 	return new_thread;
 }
 
+void execute(dccthread_t *thread) {
+	dccthread_t *curr = dccthread_self();
+	executing = thread;
+	swapcontext(&curr->context,&thread->context);
+}
+
 void dccthread_yield(void) {
 	// Remove current thread from CPU and call scheduler thread to choose the next thread
 	dccthread_t *curr = dccthread_self();
-	curr->executing = 0;
-	threads[0].executing = 1;
-	swapcontext(&curr->context,&threads[0].context);
+	
+	add_ready_queue(curr);
+	execute(&scheduler);
 }
 
-void scheduler() {
-	
+void schedule() {
+	execute(pop_ready_queue());
 }
 
 void dccthread_init(void (*func)(int), int param) {
 	// Context to return to at the end
-	ucontext_t final_context;
+	dccthread_t final_thread;
+	getcontext(&final_thread.context);
+	final_thread.name = "dccthread_init";
+	executing = &final_thread;
 
 	// Create scheduler thread
-	threads[0].name = "scheduler";
-	getcontext(&threads[0].context);
-	threads[0].context.uc_link = &final_context;//????????????????????????????????????????
-	threads[0].context.uc_stack.ss_sp = stacks[0];
-	threads[0].context.uc_stack.ss_size = sizeof stacks[0];
-	threads[0].non_empty = 1;
-	makecontext(&threads[0].context,(void *)scheduler,0);
+	scheduler.name = "scheduler";
+	getcontext(&scheduler.context);
+	scheduler.context.uc_link = &final_thread.context;//????????????????????????????????????????
+	scheduler.context.uc_stack.ss_sp = scheduler.stack;
+	scheduler.context.uc_stack.ss_size = sizeof scheduler.stack;
+	makecontext(&scheduler.context,schedule,0);
 
-	// Create main trhead that will run "func"
-	dccthread_t *main_thread = dccthread_create("main",func,param);
+	// Create main thread that will run "func"
+	dccthread_create("main",func,param);
 	
 	// Execute main thread
-	main_thread->executing = 1;
-	swapcontext(&final_context,&main_thread->context);
-	exit(0);//????????????????????????????????
+	execute(pop_ready_queue());
+	while(1)
+		schedule();//?????????????????????????
 }

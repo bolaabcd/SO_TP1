@@ -14,6 +14,8 @@ struct dccthread {
 	const char* name;
 	ucontext_t context;
 	char stack[MAX_BYTES_PER_STACK];
+	dccthread_t* waiting_me;
+	int completed;
 };
 
 dccthread_t scheduler;
@@ -56,6 +58,8 @@ dccthread_t* dccthread_create(const char *name, void (*func)(int), int param) {
 
 	// Creating thread
 	new_thread->name = name;
+	new_thread->completed = 0;
+	new_thread->waiting_me = NULL;
 	getcontext(&new_thread->context);
 	new_thread->context.uc_link = &scheduler.context;//???????????????????????
 	new_thread->context.uc_stack.ss_sp = new_thread->stack;
@@ -96,6 +100,8 @@ void dccthread_init(void (*func)(int), int param) {
 
 	// Create scheduler thread
 	scheduler.name = "scheduler";
+	scheduler.completed = 0;
+	scheduler.waiting_me = NULL;
 	getcontext(&scheduler.context);
 	scheduler.context.uc_link = &final_thread.context;//????????????????????????????????????????
 	scheduler.context.uc_stack.ss_sp = scheduler.stack;
@@ -108,4 +114,17 @@ void dccthread_init(void (*func)(int), int param) {
 	// Execute main thread
 	execute(pop_ready_queue());
 	exit(0);
+}
+
+
+void dccthread_exit(void) {
+	dccthread_t* curr = dccthread_self();
+	curr->completed = 1;
+	if(curr->waiting_me != NULL)
+		execute(curr->waiting_me);
+}
+
+void dccthread_wait(dccthread_t *tid) {
+	while(!tid->completed)
+		dccthread_yield();
 }

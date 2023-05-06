@@ -25,6 +25,7 @@ struct sigevent sev;
 timer_t timerid;
 struct itimerspec spec;
 struct sigaction action;
+sigset_t sigrt_set;
 
 // Circular queue for the list of ready threads. last_ready-1 is the last value. first = last if empty.
 dccthread_t* ready_list[MAX_THREADS];
@@ -37,7 +38,10 @@ dccthread_t* dccthread_self(void) {
 
 // Return name of the current thread
 const char* dccthread_name(dccthread_t *tid) {
-	return dccthread_self()->name;
+	sigprocmask(SIG_BLOCK,&sigrt_set,NULL);
+	dccthread_t* curr = dccthread_self();
+	sigprocmask(SIG_UNBLOCK,&sigrt_set,NULL);
+	return curr->name;
 }
 
 void add_ready_queue(dccthread_t* thread) {
@@ -73,9 +77,12 @@ dccthread_t* dccthread_create(const char *name, void (*func)(int), int param) {
 	new_thread->context.uc_stack.ss_size = sizeof new_thread->stack;
 	makecontext(&new_thread->context,(void *)func,1,param);
 	
+	// We must block after getcontext!!!
+	sigprocmask(SIG_BLOCK,&sigrt_set,NULL);
 	add_ready_queue(new_thread);
 
 	// Return without executing the new thread
+	sigprocmask(SIG_UNBLOCK,&sigrt_set,NULL);
 	return new_thread;
 }
 
@@ -86,14 +93,18 @@ void execute(dccthread_t *thread) {
 }
 
 void dccthread_yield(void) {
+	sigprocmask(SIG_BLOCK,&sigrt_set,NULL);
 	// Remove current thread from CPU and call scheduler thread to choose the next thread
 	dccthread_t *curr = dccthread_self();
 	
 	add_ready_queue(curr);
+
 	execute(&scheduler);
+	sigprocmask(SIG_UNBLOCK,&sigrt_set,NULL);
 }
 
 void schedule() {
+	sigprocmask(SIG_BLOCK,&sigrt_set,NULL);
 	while(ready_siz != 0)
 		execute(pop_ready_queue());
 }
@@ -134,6 +145,12 @@ void dccthread_init(void (*func)(int), int param) {
 	sigemptyset(&action.sa_mask);
 	action.sa_handler = dccthread_sighandler;
 
+	// Specifying sigset with SIGRTMIN signal
+    sigemptyset(&sigrt_set);
+	if (sigaddset(&sigrt_set,SIGRTMIN) == -1)
+		exit(1);
+	
+	// Setting signal action
 	if (sigaction(SIGRTMIN, &action, NULL) == -1)
 		exit(1);
 	
@@ -150,13 +167,20 @@ void dccthread_init(void (*func)(int), int param) {
 
 
 void dccthread_exit(void) {
+	sigprocmask(SIG_BLOCK,&sigrt_set,NULL);
 	dccthread_t* curr = dccthread_self();
 	curr->completed = 1;
-	if(curr->waiting_me != NULL)
+	if(curr->waiting_me != NULL) {
 		execute(curr->waiting_me);
+	}
+	sigprocmask(SIG_UNBLOCK,&sigrt_set,NULL);
 }
 
 void dccthread_wait(dccthread_t *tid) {
-	while(!tid->completed)
+	sigprocmask(SIG_BLOCK,&sigrt_set,NULL);
+	while(!tid->completed) {
 		dccthread_yield();
+		sigprocmask(SIG_BLOCK,&sigrt_set,NULL);
+	}
+	sigprocmask(SIG_UNBLOCK,&sigrt_set,NULL);
 }

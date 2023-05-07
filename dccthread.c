@@ -16,7 +16,7 @@ struct dccthread {
 	const char* name;
 	ucontext_t context;
 	char stack[MAX_BYTES_PER_STACK];
-	dccthread_t* waiting_me;
+	dccthread_t* waiting_thread;
 	int completed;
 };
 
@@ -59,46 +59,46 @@ dccthread_t* dccthread_create(const char *name, void (*func)(int), int param) {
 	dccthread_t *new_thread = malloc(sizeof (dccthread_t));
 
 	// Creating thread
-	char* b = malloc((strlen(name) + 1) * sizeof(char));
-	strcpy(b,name);
-	new_thread->name = b;// this copy is necessary (test11.sh changes the contents of "name")
+	char* buffer = malloc((strlen(name) + 1) * sizeof(char));
+	strcpy(buffer, name);
+	new_thread->name = buffer;// this copy is necessary (test11.sh changes the contents of "name")
 
 	new_thread->completed = 0;
-	new_thread->waiting_me = NULL;
+	new_thread->waiting_thread = NULL;
 	getcontext(&new_thread->context);
 	new_thread->context.uc_link = &scheduler.context;
 	new_thread->context.uc_stack.ss_sp = new_thread->stack;
 	new_thread->context.uc_stack.ss_size = sizeof new_thread->stack;
-	makecontext(&new_thread->context,(void *)func,1,param);
+	makecontext(&new_thread->context, (void*) func, 1, param);
 	
 	// We must block after getcontext!!!
-	sigprocmask(SIG_BLOCK,&sigrt_both,NULL);
+	sigprocmask(SIG_BLOCK, &sigrt_both, NULL);
 	add_ready_queue(new_thread);
 
-	// Return without executing the new thread
-	sigprocmask(SIG_UNBLOCK,&sigrt_both,NULL);
+	// Returning without executing the new thread
+	sigprocmask(SIG_UNBLOCK, &sigrt_both, NULL);
 	return new_thread;
 }
 
 void execute(dccthread_t *thread) {
 	dccthread_t *curr = dccthread_self();
 	executing = thread;
-	swapcontext(&curr->context,&thread->context);
+	swapcontext(&curr->context, &thread->context);
 }
 
 void dccthread_yield(void) {
-	sigprocmask(SIG_BLOCK,&sigrt_both,NULL);
-	// Remove current thread from CPU and call scheduler thread to choose the next thread
+	sigprocmask(SIG_BLOCK, &sigrt_both, NULL);
+	// Removing current thread from CPU and call scheduler thread to choose the next thread
 	dccthread_t *curr = dccthread_self();
 	
 	add_ready_queue(curr);
 
 	execute(&scheduler);
-	sigprocmask(SIG_UNBLOCK,&sigrt_both,NULL);
+	sigprocmask(SIG_UNBLOCK, &sigrt_both, NULL);
 }
 
 void schedule() {
-	sigprocmask(SIG_BLOCK,&sigrt_both,NULL);
+	sigprocmask(SIG_BLOCK, &sigrt_both, NULL);
 	while (!dlist_empty(ready_queue) || sleeping != 0) {
 		if (!dlist_empty(ready_queue))
 			execute(pop_ready_queue());
@@ -109,16 +109,15 @@ void dccthread_sighandler(int sig) {
 	dccthread_yield();
 }
 
-
 void dccthread_sighandler_sleep(int signum, siginfo_t *info, void* context) {
-	sigprocmask(SIG_BLOCK,&sigrt_both,NULL);
+	sigprocmask(SIG_BLOCK, &sigrt_both, NULL);
 	dccthread_t *ptr = info->si_value.sival_ptr;
 	dccthread_t *curr = dccthread_self();
 	
 	add_ready_queue(curr);
 
 	execute(ptr);
-	sigprocmask(SIG_UNBLOCK,&sigrt_both,NULL);
+	sigprocmask(SIG_UNBLOCK, &sigrt_both, NULL);
 }
 
 void dccthread_init(void (*func)(int), int param) {
@@ -128,7 +127,7 @@ void dccthread_init(void (*func)(int), int param) {
 	// Create scheduler thread
 	scheduler.name = "scheduler";
 	scheduler.completed = 0;
-	scheduler.waiting_me = NULL;
+	scheduler.waiting_thread = NULL;
 	getcontext(&scheduler.context);
 	scheduler.context.uc_link = NULL;
 	scheduler.context.uc_stack.ss_sp = scheduler.stack;
@@ -136,7 +135,7 @@ void dccthread_init(void (*func)(int), int param) {
 	makecontext(&scheduler.context,schedule,0);
 
 	// Create main thread that will run "func"
-	dccthread_create("main",func,param);
+	dccthread_create("main", func, param);
 
 	// Creating timer for timed preemption
 	sev.sigev_notify = SIGEV_SIGNAL;
@@ -163,11 +162,10 @@ void dccthread_init(void (*func)(int), int param) {
 
 	// Specifying sigset with both SIGRTMIN and SIGRTMAX signal
     sigemptyset(&sigrt_both);
-	if (sigaddset(&sigrt_both,SIGRTMIN) == -1)
+	if (sigaddset(&sigrt_both, SIGRTMIN) == -1)
 		exit(1);
-	if (sigaddset(&sigrt_both,SIGRTMAX) == -1)
+	if (sigaddset(&sigrt_both, SIGRTMAX) == -1)
 		exit(1);
-	
 
 
 	// Specifying how to handle dccthread_wait signal (we'll use SIGRTMAX)
@@ -181,10 +179,10 @@ void dccthread_init(void (*func)(int), int param) {
 		exit(1);
 	
 	// Starting timed preemption timer
-	if (timer_settime(timerid,0,&spec,NULL) == -1)
+	if (timer_settime(timerid, 0, &spec, NULL) == -1)
 		exit(1);
 
-	// Execute main thread
+	// Executing main thread
 	while(1) {
 		executing = &scheduler;
 		setcontext(&scheduler.context);
@@ -193,24 +191,24 @@ void dccthread_init(void (*func)(int), int param) {
 
 
 void dccthread_exit(void) {
-	sigprocmask(SIG_BLOCK,&sigrt_both,NULL);
+	sigprocmask(SIG_BLOCK, &sigrt_both, NULL);
 	dccthread_t* curr = dccthread_self();
 	curr->completed = 1;
-	if(curr->waiting_me != NULL) {
-		execute(curr->waiting_me);
+	if (curr->waiting_thread != NULL) {
+		execute(curr->waiting_thread);
 	}
-	sigprocmask(SIG_UNBLOCK,&sigrt_both,NULL);
+	sigprocmask(SIG_UNBLOCK, &sigrt_both, NULL);
 	free(dccthread_self());
 }
 
 void dccthread_wait(dccthread_t *tid) {
-	while(!tid->completed) {
+	while (!tid->completed) {
 		dccthread_yield();
 	}
 }
 
 void dccthread_sleep(struct timespec ts) {
-	sigprocmask(SIG_BLOCK,&sigrt_both,NULL);
+	sigprocmask(SIG_BLOCK, &sigrt_both, NULL);
 	// Creating timer for dccthread_sleep
 	timer_t timer_sleep;
 	struct sigevent sev_sleep;
@@ -226,10 +224,10 @@ void dccthread_sleep(struct timespec ts) {
 	spec_sleep.it_interval.tv_sec = 0;
 	spec_sleep.it_interval.tv_nsec = 0;
 	// Setting timer
-	if (timer_settime(timer_sleep,0,&spec_sleep,NULL) == -1)
+	if (timer_settime(timer_sleep, 0, &spec_sleep, NULL) == -1)
 		exit(1);
 	sleeping++;
 	execute(&scheduler);
 	sleeping--;
-	sigprocmask(SIG_UNBLOCK,&sigrt_both,NULL);
+	sigprocmask(SIG_UNBLOCK, &sigrt_both, NULL);
 }

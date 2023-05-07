@@ -1,4 +1,4 @@
-*.out
+tests*.out
 *.o
 *.err
 *.log

@@ -1,16 +1,17 @@
 #include "dccthread.h"
+#include "dlist.h"
 #include <ucontext.h>
 #include <stdlib.h>
 #include <string.h>
+#include <assert.h>
 
 #include <signal.h>
 #include <stdio.h>
 
-// Maximum number of threads and bytes on the stack of each thread.
-#define MAX_THREADS 1000
+// Maximum stack size of each thread.
 #define MAX_BYTES_PER_STACK 8192
 
-// Structure with data for the thread
+// Structure with data for the threads
 struct dccthread {
 	const char* name;
 	ucontext_t context;
@@ -28,40 +29,32 @@ sigset_t sigrt_both;
 
 int sleeping;
 
-// Circular queue for the list of ready threads. last_ready-1 is the last value. first = last if empty.
-dccthread_t* ready_queue[MAX_THREADS];
-int first_ready, last_ready, ready_siz;
+// Circular queue for the list of ready threads
+struct dlist* ready_queue;
 
-// Return which thread is executing
+// Returns which thread is executing
 dccthread_t* dccthread_self(void) {
 	return executing;
 }	
 
-// Return name of the current thread
+// Returns the name of the current thread
 const char* dccthread_name(dccthread_t *tid) {
 	return tid->name;
 }
 
 void add_ready_queue(dccthread_t* thread) {
-	ready_queue[last_ready] = thread;
-	last_ready = (last_ready+1)%MAX_THREADS;
-	if(last_ready == first_ready) {
-		exit(1);
-	}
-	ready_siz++;
+	dlist_push_right(ready_queue, (void*) thread);
 }
 
 dccthread_t* pop_ready_queue(void) {
-	if(last_ready == first_ready) {
-		exit(1);
-	}
-	dccthread_t *ans = ready_queue[first_ready];
-	first_ready = (first_ready+1)%MAX_THREADS;
-	ready_siz--;
-	return ans;
+	assert(!dlist_empty(ready_queue));
+	dccthread_t* thread = (dccthread_t*) dlist_get_index(ready_queue, 0);
+	dlist_pop_left(ready_queue);
+
+	return thread;
 }
 
-// Start new thread and add to ready list
+// Starts new thread and adds it to ready list
 dccthread_t* dccthread_create(const char *name, void (*func)(int), int param) {
 	dccthread_t *new_thread = malloc(sizeof (dccthread_t));
 
@@ -106,9 +99,10 @@ void dccthread_yield(void) {
 
 void schedule() {
 	sigprocmask(SIG_BLOCK,&sigrt_both,NULL);
-	while(ready_siz != 0 || sleeping != 0)
-		if(ready_siz != 0)
+	while (!dlist_empty(ready_queue) || sleeping != 0) {
+		if (!dlist_empty(ready_queue))
 			execute(pop_ready_queue());
+	}
 }
 
 void dccthread_sighandler(int sig) {
@@ -128,6 +122,9 @@ void dccthread_sighandler_sleep(int signum, siginfo_t *info, void* context) {
 }
 
 void dccthread_init(void (*func)(int), int param) {
+	// Creating ready queue
+	ready_queue = dlist_create();
+
 	// Create scheduler thread
 	scheduler.name = "scheduler";
 	scheduler.completed = 0;

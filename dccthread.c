@@ -54,14 +54,14 @@ dccthread_t* pop_ready_queue(void) {
 	return thread;
 }
 
-// Starts new thread and adds it to ready list
+// Starts new thread and adds it to the ready list
 dccthread_t* dccthread_create(const char *name, void (*func)(int), int param) {
 	dccthread_t *new_thread = malloc(sizeof (dccthread_t));
 
 	// Creating thread
 	char* buffer = malloc((strlen(name) + 1) * sizeof(char));
 	strcpy(buffer, name);
-	new_thread->name = buffer;// this copy is necessary (test11.sh changes the contents of "name")
+	new_thread->name = buffer; // this copy is necessary (test11.sh changes the contents of "name")
 
 	new_thread->completed = 0;
 	new_thread->waiting_thread = NULL;
@@ -159,9 +159,8 @@ void dccthread_init(void (*func)(int), int param) {
 	if (sigaction(SIGRTMIN, &action, NULL) == -1)
 		exit(1);
 
-
-	// Specifying sigset with both SIGRTMIN and SIGRTMAX signal
-    sigemptyset(&sigrt_both);
+	// Specifying sigset with both SIGRTMIN and SIGRTMAX 
+	sigemptyset(&sigrt_both);
 	if (sigaddset(&sigrt_both, SIGRTMIN) == -1)
 		exit(1);
 	if (sigaddset(&sigrt_both, SIGRTMAX) == -1)

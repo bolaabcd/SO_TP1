@@ -109,14 +109,10 @@ void dccthread_sighandler(int sig) {
 	dccthread_yield();
 }
 
+// Adds the thread that just woke up to the ready queue
 void dccthread_sighandler_sleep(int signum, siginfo_t *info, void* context) {
 	sigprocmask(SIG_BLOCK, &sigrt_both, NULL);
-	dccthread_t *ptr = info->si_value.sival_ptr;
-	dccthread_t *curr = dccthread_self();
-	
-	add_ready_queue(curr);
-
-	execute(ptr);
+	add_ready_queue(info->si_value.sival_ptr);
 	sigprocmask(SIG_UNBLOCK, &sigrt_both, NULL);
 }
 

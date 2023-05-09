@@ -22,9 +22,6 @@ struct dccthread {
 
 dccthread_t scheduler;
 dccthread_t* executing;
-struct sigevent sev;
-timer_t timerid;
-struct itimerspec spec;
 sigset_t sigrt_both;
 
 int sleeping;
@@ -134,6 +131,10 @@ void dccthread_init(void (*func)(int), int param) {
 	dccthread_create("main", func, param);
 
 	// Creating timer for timed preemption
+	struct sigevent sev;
+	timer_t timerid;
+	struct itimerspec spec;
+
 	sev.sigev_notify = SIGEV_SIGNAL;
 	sev.sigev_signo = SIGRTMIN;
 	sev.sigev_value.sival_ptr = NULL;

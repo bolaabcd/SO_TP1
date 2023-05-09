@@ -102,12 +102,14 @@ void schedule() {
 	}
 }
 
-void dccthread_sighandler(int sig) {
+void dccthread_sighandler(int signum) {
+	assert(signum == SIGRTMIN);
 	dccthread_yield();
 }
 
 // Adds the thread that just woke up to the ready queue
 void dccthread_sighandler_sleep(int signum, siginfo_t *info, void* context) {
+	assert(signum == SIGRTMAX);
 	sigprocmask(SIG_BLOCK, &sigrt_both, NULL);
 	add_ready_queue(info->si_value.sival_ptr);
 	sigprocmask(SIG_UNBLOCK, &sigrt_both, NULL);

@@ -138,8 +138,7 @@ void dccthread_init(void (*func)(int), int param) {
 	sev.sigev_notify = SIGEV_SIGNAL;
 	sev.sigev_signo = SIGRTMIN;
 	sev.sigev_value.sival_ptr = NULL;
-	if (timer_create(CLOCK_PROCESS_CPUTIME_ID, &sev, &timerid) == -1)
-		exit(1);
+	assert(timer_create(CLOCK_PROCESS_CPUTIME_ID, &sev, &timerid) != -1);
 	
 	spec.it_value.tv_sec = 0;
 	spec.it_value.tv_nsec = 10000000;
@@ -153,16 +152,12 @@ void dccthread_init(void (*func)(int), int param) {
 	action.sa_handler = dccthread_sighandler;
 
 	// Setting SIGRTMIN signal action
-	if (sigaction(SIGRTMIN, &action, NULL) == -1)
-		exit(1);
+	assert(sigaction(SIGRTMIN, &action, NULL) != -1);
 
 	// Specifying sigset with both SIGRTMIN and SIGRTMAX 
 	sigemptyset(&sigrt_both);
-	if (sigaddset(&sigrt_both, SIGRTMIN) == -1)
-		exit(1);
-	if (sigaddset(&sigrt_both, SIGRTMAX) == -1)
-		exit(1);
-
+	assert(sigaddset(&sigrt_both, SIGRTMIN) != -1);
+	assert(sigaddset(&sigrt_both, SIGRTMAX) != -1);
 
 	// Specifying how to handle dccthread_wait signal (we'll use SIGRTMAX)
 	action_sleep.sa_flags = SA_SIGINFO;
@@ -171,12 +166,10 @@ void dccthread_init(void (*func)(int), int param) {
 
 	
 	// Setting SIGRTMAX signal action
-	if (sigaction(SIGRTMAX, &action_sleep, NULL) == -1)
-		exit(1);
+	assert(sigaction(SIGRTMAX, &action_sleep, NULL) != -1);
 	
 	// Starting timed preemption timer
-	if (timer_settime(timerid, 0, &spec, NULL) == -1)
-		exit(1);
+	assert(timer_settime(timerid, 0, &spec, NULL) != -1);
 
 	// Executing main thread
 	while(1) {
@@ -212,16 +205,16 @@ void dccthread_sleep(struct timespec ts) {
 	sev_sleep.sigev_notify = SIGEV_SIGNAL;
 	sev_sleep.sigev_signo = SIGRTMAX;
 	sev_sleep.sigev_value.sival_ptr = dccthread_self();
-	if (timer_create(CLOCK_REALTIME, &sev_sleep, &timer_sleep) == -1)
-		exit(1);
+	assert(timer_create(CLOCK_REALTIME, &sev_sleep, &timer_sleep) != -1);
 
 	// Creating specification for dccthread_sleep timer
 	spec_sleep.it_value = ts;
 	spec_sleep.it_interval.tv_sec = 0;
 	spec_sleep.it_interval.tv_nsec = 0;
+
 	// Setting timer
-	if (timer_settime(timer_sleep, 0, &spec_sleep, NULL) == -1)
-		exit(1);
+	assert(timer_settime(timer_sleep, 0, &spec_sleep, NULL) != -1);
+
 	sleeping++;
 	execute(&scheduler);
 	sleeping--;
